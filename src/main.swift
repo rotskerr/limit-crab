@@ -353,7 +353,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let i = CommandLine.arguments.firstIndex(of: "--autoplay"), i + 1 < CommandLine.arguments.count {
             let what = CommandLine.arguments[i + 1]
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                if what == "walk" { self?.startWalk() } else if what == "gull" { self?.startGull() } else if what == "tramp" { _ = self?.startTramp() } else if what == "hide" { self?.startHide() } else if what == "snip" { _ = self?.startSnip() } else if what == "psycho" { self?.startPsycho() }
+                if what == "walk" { self?.startWalk() } else if what == "gull" { self?.startGull() } else if what == "tramp" { _ = self?.startTramp() } else if what == "hide" { self?.startHide() } else if what == "snip" { _ = self?.startSnip() } else if what == "psycho" { self?.startPsycho() } else if what == "smash" { self?.startSmash() }
             }
         }
     }
@@ -557,7 +557,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func canPlay() -> Bool {
         let hour = Calendar.current.component(.hour, from: Date())
-        guard let p = shownPct, p < 90, hour >= 7, hour < 23, !menuOpen, !isLonely, walkStart < 0, gullStart < 0, tramp == nil, snip == nil, dragMode == .none, psycho == nil, !pressed else { return false }
+        guard let p = shownPct, p < 90, hour >= 7, hour < 23, !menuOpen, !isLonely, walkStart < 0, gullStart < 0, tramp == nil, snip == nil, dragMode == .none, psycho == nil, smash == nil, !pressed else { return false }
         return item.button?.window?.occlusionState.contains(.visible) ?? false
     }
     func startWalk() {
@@ -833,7 +833,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     // Кіберпсихоз: 5–7 телепортів у випадкові місця вільної частини менюбару (по 4–8 кадрів), останній: додому на 3 кадри.
     func startPsycho() {
-        guard !homeHidden, let r = homeRect(), let scr = item.button?.window?.screen ?? NSScreen.main else { return }
+        guard !homeHidden, smash == nil, let r = homeRect(), let scr = item.button?.window?.screen ?? NSScreen.main else { return }
         var p = Psycho(); p.start = frame
         let nt = notch(scr)
         // Вільні зони менюбару: на екранах із вирізом дві (праворуч від нього й ліворуч, над меню застосунків), інакше одна.
@@ -879,7 +879,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func mascot(_ pct: Double?, frame f: Int) -> NSImage {
         // Анімація краба покадрова, тож між кроками (швидкий таймер) перевикористовуємо ту саму картинку: економить процесор.
         if mascotCacheFrame != f { mascotCache.removeAll(); mascotCacheFrame = f }
-        let key = "\(pct ?? -1)|\(playPose ?? "")|\(isWalking)|\(lookDx)|\(isScared)|\(isHover)|\(isLonely)|\(isDancing)|\(debugForce ?? "")|\(cyber)|\(glitchOn)|\(f < forceBrokenUntil)"
+        let key = "\(pct ?? -1)|\(playPose ?? "")|\(isWalking)|\(lookDx)|\(isScared)|\(isHover)|\(isLonely)|\(isDancing)|\(debugForce ?? "")|\(cyber)|\(glitchOn)|\(f < forceBrokenUntil)|\(rock)|\(smash?.start ?? -1)|\(tramp != nil)"
         if let c = mascotCache[key] { return c }
         var img = rasterize(mascotBase(pct, frame: f))
         if cyber { img = rasterize(neonGlow(img)) }
@@ -894,6 +894,43 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.addAttribute(.foregroundColor, value: frame % 2 == 0 ? App.c(0, 230, 255) : App.c(255, 40, 160), range: r)
         m.addAttribute(.baselineOffset, value: CGFloat(App.lcg(frame &* 31) % 5 - 2), range: r)
         return m
+    }
+
+    // MARK: режим рок-зірки 🎸
+    // Ірокез і електрогітара; іноді соло (б'є по струнах, кричить, нотки); від 75% хедбенг; від 95% раз на 2–5 хв розбиває гітару
+    // (замах → удар → уламки → нова гітара); свято скидання ліміту — піротехніка; батут у Dock стає стейдж-дайвом (підсилювач, натовп з руками).
+    var rock = UserDefaults.standard.object(forKey: "rock") as? Bool ?? true
+    struct Smash { var start = 0 }
+    var smash: Smash?
+    var nextSmash = 700
+    func startSmash() { guard smash == nil, psycho == nil, !homeHidden else { return }; smash = Smash(start: frame) }
+    @objc func debugSmash() { startSmash() }
+    @objc func toggleRock() { rock.toggle(); UserDefaults.standard.set(rock, forKey: "rock"); render() }
+    func ampImage() -> NSImage {                                    // підсилювач замість батута (13×4 клітинки по 3 pt)
+        let k: CGFloat = 3
+        let img = NSImage(size: NSSize(width: 13 * k, height: 4 * k), flipped: true) { _ in
+            func cell(_ x: Int, _ y: CGFloat, _ c: NSColor, h: CGFloat = 1) { c.setFill(); NSRect(x: CGFloat(x) * k, y: y * k, width: k, height: h * k).fill() }
+            for x in 0..<13 { cell(x, 0, App.c(70, 70, 76), h: 0.6) }                                   // верхня кромка
+            for y in 1...3 { for x in 0..<13 { cell(x, CGFloat(y), (x + y) % 2 == 0 ? App.c(26, 26, 28) : App.c(50, 50, 56)) } }   // решітка
+            for x in [1, 3, 5] { cell(x, 0, App.c(235, 190, 60), h: 0.5) }                                // ручки
+            return true
+        }
+        img.isTemplate = false
+        return img
+    }
+    func handsImage(_ f: Int) -> NSImage {                          // натовп під крабом: руки вгору
+        NSImage(size: NSSize(width: 30, height: 10), flipped: false) { _ in
+            App.c(240, 200, 170).setFill()
+            for i in 0..<5 {
+                let x = CGFloat(3 + i * 6), hgt: CGFloat = (f / 2 + i) % 2 == 0 ? 7 : 9
+                NSRect(x: x, y: 0, width: 2, height: hgt).fill(); NSRect(x: x - 0.5, y: hgt - 1, width: 3, height: 2).fill()
+            }
+            return true
+        }
+    }
+    func debrisImage(_ k: Int) -> NSImage {                         // уламки гітари
+        let c = [App.c(220, 30, 45), App.c(120, 78, 40), App.c(205, 210, 220)][k % 3]
+        return NSImage(size: NSSize(width: 3, height: 3), flipped: false) { r in c.setFill(); r.fill(); return true }
     }
 
     // MARK: Dock і батут
@@ -1079,9 +1116,12 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let tr = tramp {
             if let fr = trampFrame(tr, ft - Double(tr.start)) {
                 playPose = fr.pose; isWalking = fr.walking; lookDx = fr.look; isHover = false
-                items.append((cachedSprite("t\(fr.squash)") { trampolineImage(squash: fr.squash) }, NSRect(x: tr.tx - 19.5, y: tr.dockTop, width: 39, height: 12)))
+                if rock { items.append((cachedSprite("amp") { ampImage() }, NSRect(x: tr.tx - 19.5, y: tr.dockTop, width: 39, height: 12))) }      // рок: підсилювач
+                else { items.append((cachedSprite("t\(fr.squash)") { trampolineImage(squash: fr.squash) }, NSRect(x: tr.tx - 19.5, y: tr.dockTop, width: 39, height: 12))) }
+                let surf: CGFloat = rock && fr.walking ? 7 : 0                         // рок: пливе по натовпу над іконками
+                if surf > 0 { items.append((cachedSprite("hands\((frame / 2) % 2)") { handsImage(frame) }, NSRect(x: fr.x - 15, y: tr.dockTop - 2, width: 30, height: 10))) }
                 let ci = mascot(shownPct, frame: frame); crabImg = ci
-                crabRect = NSRect(x: fr.x - 15, y: fr.y - 2, width: 30, height: 20); items.append((ci, crabRect!))
+                crabRect = NSRect(x: fr.x - 15, y: fr.y - 2 + surf, width: 30, height: 20); items.append((ci, crabRect!))
             } else { tramp = nil }
         }
         if let sn = snip {
@@ -1104,6 +1144,17 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if isLast || local < Double(ps.durs[idx]) - 1 {                            // перед стрибком на мить зникає
                     let ci = mascot(shownPct, frame: frame); crabImg = ci
                     crabRect = NSRect(x: x, y: homeY, width: 30, height: 20); items.append((ci, crabRect!))
+                }
+            }
+        }
+        if let sm = smash {                                                         // рок: уламки розбитої гітари розлітаються
+            let t = ft - Double(sm.start)
+            if t >= 40 { smash = nil }
+            else if t >= 6 && t < 30 {
+                let tau = CGFloat(t - 6), ox = homeX + 24, oy = homeY + 6
+                for i in 0..<8 {
+                    let vx = CGFloat(App.lcg(sm.start &* 13 &+ i) % 13 - 6) * 0.9, vy = CGFloat(App.lcg(sm.start &* 17 &+ i &* 7) % 8 + 3)
+                    items.append((cachedSprite("deb\(i % 3)") { debrisImage(i % 3) }, NSRect(x: ox + vx * tau, y: oy + vy * tau - 0.6 * tau * tau, width: 3, height: 3)))
                 }
             }
         }
@@ -1232,13 +1283,23 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let monday = fun && (force == nil ? dow == 1 && hour >= 8 && hour < 11 : force == "monday")
         let hover = fun && (isHover || force == "hover")
 
+        let rockOn = rock
+        let smashT: Int? = smash.map { f - $0.start }                     // «розбиває гітару»: кадр від початку сцени
+        let lift = rockOn && (smashT.map { $0 < 6 } ?? false)             // замах: гітара над головою
+        let smashing = rockOn && (smashT.map { $0 >= 6 && $0 < 8 } ?? false)
+        let noGuitar = rockOn && (smashT.map { $0 >= 8 && $0 < 30 } ?? false)
+        let rage = lift || smashing || noGuitar
+        let onStage = tramp != nil && !isWalking && playPose == nil       // сидить на іконці під час стейдж-дайву
+        let riff = rockOn && !rage && ((fun && (f % 120 < 16 || onStage)) || force == "riff")   // соло: раз на ~18 с на 2.4 с
+        let headbang = rockOn && !rage && ((!special && !sleeping && pct != nil && p >= 75 && p < 90) || force == "headbang")
+        let pyro = rockOn && party
         let bodyColor = p >= 90 ? App.c(204, 92, 77) : p >= 75 ? App.c(224, 128, 77) : App.c(217, 120, 87)
         let bobPeriod = party || hover || disco || welcome ? 2 : sleeping || lonely || monday ? 9 : p >= 90 ? 7 : p >= 75 ? 2 : p >= 50 ? 5 : 4
-        let y0 = scared ? 4 : dance ? 3 + ((f / 2) % 2 == 0 ? 0 : 1) : posed ? 3 : 3 + ((f / bobPeriod) % 2 == 0 ? 0 : 1)                // тіло починається з 3-го рядка
+        let y0 = scared ? 4 : dance ? 3 + ((f / 2) % 2 == 0 ? 0 : 1) : posed ? 3 : headbang ? 3 + f % 2 : 3 + ((f / bobPeriod) % 2 == 0 ? 0 : 1)                // тіло починається з 3-го рядка
         let blink = f % (p >= 50 ? 36 : 24) < 2
         let legs = (f / (isWalking ? 1 : party || disco ? 2 : 3)) % 2 == 1 ? ".X..X.X..X." : "..X.X.X.X.."
         let rows = ["..XXXXXXX..", "..XXXXXXX..", "XXXXXXXXXXX", "XXXXXXXXXXX", "..XXXXXXX.."]
-        let ox = 1 + (panic || scared || psychoP ? (f % 2 == 0 ? 1 : -1) : disco || dance ? ((f / 3) % 2 == 0 ? 1 : -1) : 0)   // тремтить або танцює
+        let ox = 1 + (panic || scared || psychoP || smashing ? (f % 2 == 0 ? 1 : -1) : disco || dance ? ((f / 3) % 2 == 0 ? 1 : -1) : 0)   // тремтить або танцює
         let look = lookDx
 
         let img = NSImage(size: NSSize(width: 15 * px, height: 10 * px), flipped: true) { _ in
@@ -1256,6 +1317,21 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 cell(2, ey, (f / 10) % 2 == 0 ? App.c(0, 230, 255) : App.c(0, 140, 200), h: 0.5, dy: 0.25)
                 cell(0, y0 + 2, App.c(205, 210, 220), h: 0.5, dy: 0.25); cell(10, y0 + 2, App.c(205, 210, 220), h: 0.5, dy: 0.25)
             }
+            let gRed = App.c(220, 30, 45), gWood = App.c(120, 78, 40)
+            if rockOn && !noGuitar && !lift && !smashing {                                 // електрогітара в клешнях
+                let sy: CGFloat = riff && f % 2 == 0 ? 0.5 : 0                             // б'є по струнах
+                cell(1, y0 + 3, gRed, dy: sy); cell(2, y0 + 3, gRed, dy: sy)
+                cell(1, y0 + 4, gRed, h: 0.7, dy: sy); cell(2, y0 + 4, gRed, h: 0.7, dy: sy)
+                cell(2, y0 + 3, .white, h: 0.3, dy: 0.35 + sy)                             // накладка
+                for x in 3...9 { cell(x, y0 + 2, gWood, h: 0.4, dy: 0.5) }                 // гриф
+                cell(10, y0 + 1, dark); cell(10, y0 + 2, dark, h: 0.6)                     // голова грифа
+                if riff { cell(3, y0 + 3, App.c(255, 214, 10), h: 0.5, dy: f % 2 == 0 ? 0 : 0.4) }   // медіатор
+            }
+            if lift {                                                                      // замах: гітара над головою
+                cell(4, y0 - 2, gRed); cell(5, y0 - 2, gRed); cell(4, y0 - 1, gRed, h: 0.6); cell(5, y0 - 1, gRed, h: 0.6)
+                cell(5, y0 - 3, gWood)
+            }
+            if smashing { cell(11, y0 + 4, gRed); cell(12, y0 + 4, gRed); cell(11, y0 + 5, gRed, h: 0.6) }   // удар об підлогу
             func eyes(_ dx: Int, _ closed: Bool) {
                 if closed { cell(3 + dx, ey, dark, h: 0.4, dy: 0.6); cell(7 + dx, ey, dark, h: 0.4, dy: 0.6) }
                 else { cell(3 + dx, ey, dark); cell(7 + dx, ey, dark) }
@@ -1270,7 +1346,11 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             var hat = halloween || winter
 
-            if held {                                          // у руці: очі круглі, рот «о», ноги бовтаються
+            if rage {                                          // розбиває гітару: злі брови, крик
+                cell(2, y0, dark, h: 0.4, dy: 0.1); cell(3, y0, dark, h: 0.4, dy: 0.5); cell(6, y0, dark, h: 0.4, dy: 0.5); cell(7, y0, dark, h: 0.4, dy: 0.1)
+                eyes(0, false); cell(5, my, dark)
+                if lift { claws(true, true) } else if noGuitar { claws((f / 2) % 2 == 0, (f / 2) % 2 == 1) }   // «коза» по черзі
+            } else if held {                                   // у руці: очі круглі, рот «о», ноги бовтаються
                 wideEyes(); cell(5, my, dark)
             } else if dizzy {                                  // паморочиться: очі заплющені, зірочки кружляють
                 eyes(0, true)
@@ -1307,8 +1387,17 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 claws(false, true)
             } else if party {
                 happyEyes(); smile()
-                for i in 0..<6 {                               // конфеті падає
-                    cell((i * 5 + 2) % 13 - 1, (f / 2 + i * 2) % 9, App.confetti[i % 5], fixed: true)
+                if pyro {                                      // рок: піротехніка з боків, «коза»
+                    for (x, ph) in [(0, 0), (12, 2)] {
+                        let hgt = 3 + (f + ph) % 4
+                        for k in 0..<hgt { cell(x, 9 - k, k < hgt / 2 ? App.c(255, 210, 40) : App.c(255, 110, 20), fixed: true) }
+                        if (f + ph) % 3 == 0 { cell(x, 9 - hgt - 1, .white, h: 0.5, fixed: true) }
+                    }
+                    claws(true, true)
+                } else {
+                    for i in 0..<6 {                           // конфеті падає
+                        cell((i * 5 + 2) % 13 - 1, (f / 2 + i * 2) % 9, App.confetti[i % 5], fixed: true)
+                    }
                 }
             } else if wave {
                 happyEyes(); smile()
@@ -1337,7 +1426,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     cell(3, ey, dark); cell(4, ey, dark); cell(6, ey, dark); cell(7, ey, dark)
                     cell(5, ey, dark, h: 0.4)
                     cell(3, ey, App.glint, h: 0.3); cell(6, ey, App.glint, h: 0.3)               // відблиск
-                } else if disco || hover { happyEyes() }
+                } else if disco || hover || riff { happyEyes() }
+                else if headbang { eyes(0, true) }
                 else if p >= 75 { eyes([-1, 0, 1, 0][(f / 4) % 4], blink) }
                 else if monday { eyes(0, f % 50 >= 8 || f % 50 < 2) }                           // ледве розплющує очі
                 else if coffee && f % 40 < 6 { eyes(0, true) }                                   // смакує ковток
@@ -1345,6 +1435,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
                 if monday && f % 50 < 8 { cell(5, my, dark) }                                    // позіхає
                 else if lunch { cell(5, my, dark, h: (f / 3) % 2 == 0 ? 0.6 : 0.25, dy: 0.2) }   // жує
+                else if riff || headbang { cell(5, my, dark, h: 0.8) }                          // кричить
                 else if p >= 75 { drop(11) }
                 else if p >= 50 || hover || shades || disco { smile() }
                 if monday {                                                                      // мішки під очима
@@ -1386,6 +1477,14 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 for x in 4...6 { cell(x, y0 - 2, App.red) }
                 cell(5, y0 - 3, .white)
             }
+            if rockOn && !hat && !disco && !lift && !flagDay && !(valentine && fun) {            // ірокез (при хедбенгу метляється)
+                let hx = headbang ? (f % 2 == 0 ? -1 : 1) : 0, pink = App.c(255, 40, 160)
+                cell(5 + hx, y0 - 1, dark); cell(4 + hx, y0 - 1, dark, h: 0.5, dy: 0.5); cell(6 + hx, y0 - 1, dark, h: 0.5, dy: 0.5)
+                cell(5 + hx, y0 - 2, pink); cell(5 + hx * 2, y0 - 3, pink, h: 0.6, dy: 0.4)
+            }
+            if riff {                                                                            // нотки вилітають
+                for i in 0..<2 { let k = (f / 2 + i * 3) % 6; cell(12 + i, 6 - k, App.c(255, 214, 10), h: 0.6, fixed: true) }
+            }
             if flagDay && !hat {                                                                 // синьо-жовтий прапорець
                 for y in (y0 - 3)...(y0 - 1) { cell(5, y, App.c(150, 150, 150)) }
                 cell(6, y0 - 3, App.c(0, 87, 184)); cell(7, y0 - 3, App.c(0, 87, 184))
@@ -1419,7 +1518,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var fpsCount = 0, fpsT0 = Date()
     var busy: Bool {
         walkStart >= 0 || tramp != nil || snip != nil || psycho != nil || gullStart >= 0 || (dragMode != .none && dragMode != .held)
-            || (cyber && isDancing) || !trail.isEmpty || frame < beamUntil
+            || (cyber && isDancing) || !trail.isEmpty || frame < beamUntil || smash != nil
     }
     var fastTimer: Timer?
     // Швидкий таймер існує лише поки краб рухається: удома він не будить процесор 30 разів на секунду.
@@ -1470,7 +1569,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ("Валентинка", 20, "valentine"),
         ("День Незалежності", 20, "flag"),
         ("Танцює + еквалайзер", 20, "dance"),
-        ("Кіберпсихоз (поза)", 97, "psycho")]
+        ("Кіберпсихоз (поза)", 97, "psycho"),
+        ("Рок: соло на гітарі", 20, "riff"),
+        ("Рок: хедбенг · 80%", 80, "headbang")]
     // Вікно з графіком
     var graphWin: NSWindow?
     var graphView: GraphView?
@@ -1533,6 +1634,10 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if cyber && (hotValue ?? 0) >= 95 && !homeHidden && !menuOpen && !isLonely { startPsycho() }
             nextPsycho = frame + Int.random(in: 800...2000)                            // раз на 2–5 хв
         }
+        if frame >= nextSmash {                                                        // рок: від 95% розбиває гітару раз на 2–5 хв
+            if rock && (hotValue ?? 0) >= 95 && !homeHidden && !menuOpen && !isLonely && psycho == nil { startSmash() }
+            nextSmash = frame + Int.random(in: 800...2000)
+        }
         updatePlay()
         ensureFastTimer()
         if isLonely && frame % 4 != 0 && walkStart < 0 && gullStart < 0 && tramp == nil && snip == nil && dragMode == .none && psycho == nil { return }   // поки тебе нема, малюємо вчетверо рідше
@@ -1584,6 +1689,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.addItem(.separator())
         let gr = NSMenuItem(title: "Графік використання…", action: #selector(showGraph), keyEquivalent: "g"); gr.target = self; m.addItem(gr)
         let cy = NSMenuItem(title: "Кіберпанк-режим", action: #selector(toggleCyber), keyEquivalent: ""); cy.target = self; cy.state = cyber ? .on : .off; m.addItem(cy)
+        let rk = NSMenuItem(title: "Рок-зірка 🎸", action: #selector(toggleRock), keyEquivalent: ""); rk.target = self; rk.state = rock ? .on : .off; m.addItem(rk)
         let dbg = NSMenuItem(title: "Дебаг: стани краба", action: nil, keyEquivalent: "")
         let sub = NSMenu()
         for (i, st) in App.debugStates.enumerated() {
@@ -1593,7 +1699,8 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         sub.addItem(.separator())
         let dw = NSMenuItem(title: "Піти погуляти зараз", action: #selector(debugWalk), keyEquivalent: ""); dw.target = self; sub.addItem(dw)
-        let dt = NSMenuItem(title: "Батут на Dock", action: #selector(debugTramp), keyEquivalent: ""); dt.target = self; sub.addItem(dt)
+        let dt = NSMenuItem(title: rock ? "Стейдж-дайв на Dock" : "Батут на Dock", action: #selector(debugTramp), keyEquivalent: ""); dt.target = self; sub.addItem(dt)
+        let ds = NSMenuItem(title: "Розбити гітару зараз", action: #selector(debugSmash), keyEquivalent: ""); ds.target = self; sub.addItem(ds)
         let dp = NSMenuItem(title: "Кіберпсихоз зараз", action: #selector(debugPsycho), keyEquivalent: ""); dp.target = self; sub.addItem(dp)
         let dc = NSMenuItem(title: "Ловити курсор", action: #selector(debugSnip), keyEquivalent: ""); dc.target = self; sub.addItem(dc)
         let dh = NSMenuItem(title: "Сховатися в камері", action: #selector(debugHide), keyEquivalent: ""); dh.target = self; sub.addItem(dh)
@@ -1681,13 +1788,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--readme-images"), i + 1 < Comm
         let a = NSAttributedString(string: s, attributes: [.font: NSFont.systemFont(ofSize: size, weight: .medium), .foregroundColor: color])
         a.draw(at: NSPoint(x: x - a.size().width / 2, y: y))
     }
-    // 1) таблиця станів із підписами
-    let states = Array(App.debugStates.dropFirst()), cols = 6, cw = 170, ch = 150, sc: CGFloat = 4
+    // 1) таблиця станів із підписами (класичний вигляд; рок-зірку показує окрема GIF-ка)
+    d.rock = false
+    let states = Array(App.debugStates.dropFirst().filter { !$0.0.hasPrefix("Рок:") }), cols = 6, cw = 170, ch = 150, sc: CGFloat = 4
     let rows = (states.count + cols - 1) / cols
     png(canvas(cols * cw, rows * ch) {
         for (n, st) in states.enumerated() {
             d.debugForce = st.2
-            let img = d.mascot(st.1, frame: 5)
+            let img = d.mascot(st.1, frame: 21)
             let c = n % cols, r = rows - 1 - n / cols
             let x = CGFloat(c * cw) + (CGFloat(cw) - 30 * sc) / 2, y = CGFloat(r * ch) + 34
             img.draw(in: NSRect(x: x, y: y, width: 30 * sc, height: 20 * sc), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
@@ -1695,6 +1803,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--readme-images"), i + 1 < Comm
         }
         d.debugForce = nil
     }, "crab-states.png")
+    d.rock = true
     // 2) менюбар: краб + цифри на темній смузі (2x)
     png(canvas(520, 66) {
         NSColor(white: 0.17, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: 520, height: 66).fill()
@@ -1715,6 +1824,27 @@ if let i = CommandLine.arguments.firstIndex(of: "--readme-images"), i + 1 < Comm
     crabGIF(30, nil, 48, "crab-idle.gif")
     crabGIF(97, "glitch", 40, "crab-glitch.gif")
     crabGIF(20, "dance", 24, "crab-dance.gif")
+    // рок-зірка: соло → хедбенг → розбиває гітару (з уламками) → піротехніка
+    var rockFrames: [CGImage] = []
+    func rockFrame(_ pct: Double, _ f: Int, debris: CGFloat? = nil) -> CGImage {
+        canvas(240, 190) {
+            d.mascot(pct, frame: f).draw(in: NSRect(x: 30, y: 30, width: 180, height: 120), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            if let tau = debris {
+                for i in 0..<8 {
+                    let vx = CGFloat(App.lcg(13 &+ i) % 13 - 6) * 0.9 * 4, vy = CGFloat(App.lcg(17 &+ i &* 7) % 8 + 3) * 4
+                    [App.c(220, 30, 45), App.c(120, 78, 40), App.c(205, 210, 220)][i % 3].setFill()
+                    NSRect(x: 175 + vx * tau, y: 70 + vy * tau - 2.4 * tau * tau, width: 9, height: 9).fill()
+                }
+            }
+        }
+    }
+    d.debugForce = "riff"; for f in 0..<16 { rockFrames.append(rockFrame(20, f)) }
+    d.debugForce = "headbang"; for f in 0..<12 { rockFrames.append(rockFrame(80, f)) }
+    d.debugForce = nil; d.smash = App.Smash(start: 0)
+    for f in 0..<34 { rockFrames.append(rockFrame(96, f, debris: f >= 6 && f < 30 ? CGFloat(f - 6) : nil)) }
+    d.smash = nil; d.debugForce = "party"; for f in 0..<16 { rockFrames.append(rockFrame(20, f)) }
+    d.debugForce = nil
+    gif(rockFrames, 0.15, "rockstar.gif")
     // 4) сцена з батутом: менюбар зверху, Dock унизу, краб падає, відскакує, іде до іконки, сидить і летить назад (з неоновим слідом)
     let W: CGFloat = 270, H: CGFloat = 240, S: CGFloat = 2
     var t = App.Tramp(); t.hx = 215; t.hy = H - 26; t.tx = 70; t.dockTop = 36; t.ix = 200; t.iconTop = 36; t.walk = Int(abs(t.ix - t.tx) / 4)
